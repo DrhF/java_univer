@@ -5,6 +5,19 @@ public class Schedule {
     private Date date;
     private double amount_loan, amount_prc;
 
+    public Schedule()
+    {
+        date = new Date();
+        amount_loan = amount_prc = 0;
+    }
+
+    public Schedule(Date date, double amount_loan, double amount_prc)
+    {
+        this.date = date;
+        this.amount_loan = amount_loan;
+        this.amount_prc = amount_prc;
+    }
+
     public void setDate(Date date) {
         this.date = date;
     }

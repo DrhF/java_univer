@@ -1,42 +1,26 @@
+import java.io.*;
 import java.text.DateFormat;
 import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.Date;
-import java.util.Scanner;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.apache.poi.hssf.extractor.ExcelExtractor;
+import org.apache.poi.hssf.usermodel.HSSFWorkbook;
+import org.apache.poi.ss.usermodel.*;
+
+import static com.sun.deploy.trace.Trace.print;
 
 public class Loan_process {
 
-    public static class LoanInfo {
-        public int months;
-        public Date loan_date;
-        public double percent;
-        private double amount, curr_amount;
-
-        public void setAmount(double amount) {
-            this.amount = amount;
-            curr_amount = amount;
-        }
-
-        public double getAmount() {
-            return amount;
-        }
-
-        public void setCurr_amount(double curr_amount) {
-            this.curr_amount = curr_amount;
-        }
-
-        public double getCurr_amount() {
-            return curr_amount;
-        }
-    }
-
-    public static LoanInfo get_info() throws ParseException {
+    public static LoanInfo get_info(InputStream inputStream, Optional<OutputStream> outputStream) throws ParseException, IOException {
         LoanInfo info = new LoanInfo();
 
-        Scanner in = new Scanner(System.in);
+        Scanner in = new Scanner(inputStream);
 
-        System.out.print("Enter day of loan: ");
+        if (outputStream.isPresent()) {
+            outputStream.get().write("Enter day of loan: ".getBytes());
+        }
         DateFormat df = DateFormat.getDateInstance();
         try {
             info.loan_date = df.parse(in.next());
@@ -44,20 +28,25 @@ public class Loan_process {
             e.printStackTrace();
         }
 
-        System.out.print("Enter term in months: ");
+        if (outputStream.isPresent()) {
+            outputStream.get().write("Enter term in months: ".getBytes());
+        }
         info.months = in.nextInt();
 
-        System.out.print("Enter amount of loan: ");
-        info.amount = in.nextDouble();
+        if (outputStream.isPresent()) {
+            outputStream.get().write("Enter amount of loan: ".getBytes());
+        }
+        info.amount = Double.parseDouble(in.next());
 
-        System.out.print("Enter percent: ");
-        info.percent = in.nextDouble();
+        if (outputStream.isPresent()) {
+            outputStream.get().write("Enter percent: ".getBytes());
+        }
+        info.percent = Double.parseDouble(in.next());
 
         return info;
     }
 
-    public static Date addMonth(Date date, int months)
-    {
+    public static Date addMonth(Date date, int months) {
         Calendar cal = Calendar.getInstance();
         cal.setTime(date);
         cal.add(Calendar.MONTH, months);
@@ -91,16 +80,89 @@ public class Loan_process {
         return percent / 100 / 12;
     }
 
-    public static void main(String[] args) throws ParseException {
-        LoanInfo loanInfo = get_info();
-
+    public static ArrayList<Schedule> getScheduleList(LoanInfo loanInfo)
+    {
         ArrayList<Schedule> scheduleList = new ArrayList<>();
 
         for(int month = 0; month < loanInfo.months; ++month) {
             Schedule schedule =get_next_Schedule(month, loanInfo);
             scheduleList.add(schedule);
-            System.out.printf("%10.2f %10.2f %10.2f\n", schedule.getAmount_loan(), schedule.getAmount_prc(),
-                    schedule.getAmount_loan() + schedule.getAmount_prc());
         }
+
+        return scheduleList;
     }
+
+    public static void writeScheduleIntoExcel(OutputStream oStream, ArrayList<Schedule> lst) throws IOException {
+        Workbook book = new HSSFWorkbook();
+        Sheet sheet = book.createSheet("Кредит");
+
+        //title row
+        Row titleRow = sheet.createRow(0);
+        Cell dateCell = titleRow.createCell(0);
+        dateCell.setCellValue("Дата");
+        Cell loanPaymentCell = titleRow.createCell(1);
+        loanPaymentCell.setCellValue("Выплаты по основному долгу");
+        Cell percentPaymentCell = titleRow.createCell(2);
+        percentPaymentCell.setCellValue("Выплаты по основному долгу");
+        Cell sumPaymentCell = titleRow.createCell(3);
+        sumPaymentCell.setCellValue("Суммарная выплата по кредиту");
+
+        DataFormat format = book.createDataFormat();
+        CellStyle dateStyle = book.createCellStyle();
+        dateStyle.setDataFormat(format.getFormat("dd.mm.yyyy"));
+
+        // Нумерация начинается с нуля
+        int rowNum = 1;
+        for(Schedule sch : lst)
+        {
+            Row row = sheet.createRow(rowNum);
+
+            dateCell = row.createCell(0);
+            dateCell.setCellValue(sch.getDate());
+            dateCell.setCellStyle(dateStyle);
+
+            loanPaymentCell = row.createCell(1);
+            loanPaymentCell.setCellValue(sch.getAmount_loan());
+
+            percentPaymentCell = row.createCell(2);
+            percentPaymentCell.setCellValue(sch.getAmount_prc());
+
+            sumPaymentCell = row.createCell(3);
+            sumPaymentCell.setCellFormula("$B$" + Integer.toString(rowNum+1)+ "+$C$" + Integer.toString(rowNum+1));
+
+            rowNum++;
+        }
+
+        for(int col = 0; col < 5; ++col)
+            sheet.autoSizeColumn(col);
+
+        book.write(oStream);
+        book.close();
+    }
+
+    public static void main(String[] args) throws ParseException, IOException {
+        LoanInfo loanInfo = get_info(System.in, Optional.of(System.out));
+
+        ArrayList<Schedule> scheduleList = getScheduleList(loanInfo);
+
+        try {
+            Scanner in = new Scanner(System.in);
+            System.out.print("Enter file name to save (should be <filename>.xls): ");
+            String fileName = in.nextLine();
+
+            Pattern p = Pattern.compile(".+\\.xls");
+            Matcher m = p.matcher(fileName);
+            boolean b = m.matches();
+
+            if(!b)
+                throw new InputMismatchException("File name format should be <filename>.xls");
+
+            FileOutputStream fs = new FileOutputStream(fileName);
+            writeScheduleIntoExcel(fs, scheduleList);
+        } catch (IOException | InputMismatchException e) {
+            e.printStackTrace();
+        }
+
+    }
+
 }
